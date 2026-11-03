@@ -113,7 +113,8 @@ that has package read access when required. No image is published from a PR or a
 manual run on another branch.
 
 The image includes Python 3.12, Certbot and this plugin. Its entrypoint is
-`certbot`; pass Certbot arguments directly. No credentials are built into it.
+`certbot`; pass Certbot arguments directly. Provision credentials at runtime, not
+in the image.
 Create the host state directory on local persistent storage and prepare the
 credential file described above separately, owned by root with mode 0600 (0400
 also works). The image runs as root; for rootless Docker, use the corresponding
@@ -152,17 +153,27 @@ For explicit recovery, stop all scheduled jobs and use those same mounts with
 Local build and credential-free runtime verification:
 
 ```sh
+python3 scripts/check-docker-context.py
 docker build --pull -t certbot-dns-amber:local .
 python3 scripts/smoke-container.py certbot-dns-amber:local
 ```
 
 CI retains the pytest, package build and installed-wheel discovery gates, then
-builds and smoke-tests the container with networking disabled. Only main pushes
+checks the exact Docker context file set using a real BuildKit context export in
+an isolated synthetic checkout before building the runtime image. The regression
+includes nested credentials, a new module, bytecode, an unrelated source sibling
+and a root `.env`; no real secrets are copied into the test context. Runtime smoke
+tests run with networking disabled. Only main pushes
 and manual main runs can hand the tested image to a separate GHCR publisher
 using `GITHUB_TOKEN`; only that job has `packages: write`. The publisher loads the
 same image, without rebuilding. The short-lived image artifact is only an internal
 transfer, not a wheel release. The Docker context is an explicit file allowlist;
-new runtime source files must be added to `.dockerignore` deliberately.
+new runtime source files must be added to `.dockerignore` and the independent
+expected set in `scripts/check-docker-context.py` deliberately. Do not unignore
+parent directories: Docker then admits their subtrees. This is path filtering,
+not secret scanning: it excludes files outside the allowlist but cannot protect
+secrets embedded inside allowlisted files (including source, README and build
+metadata). Keep those files credential-free.
 
 ## Renewal, expiry and rotation
 

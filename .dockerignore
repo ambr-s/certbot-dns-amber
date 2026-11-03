@@ -1,11 +1,11 @@
-# Deny by default: never send credentials, journals, git or build output.
+# Deny by default: only these named build/runtime inputs are admitted.
+# Do not unignore parent directories: that admits their entire subtrees.
+# This filters paths, not secrets embedded in an allowlisted file.
 **
 !Dockerfile
 !.dockerignore
 !pyproject.toml
 !README.md
-!src/
-!src/certbot_dns_amber/
 !src/certbot_dns_amber/__init__.py
 !src/certbot_dns_amber/__main__.py
 !src/certbot_dns_amber/authenticator.py
