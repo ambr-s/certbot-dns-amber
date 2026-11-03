@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "certbot-dns-amber"
+version = "0.1.0"
+description = "Certbot DNS authenticator for scoped amber.systems console credentials"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["certbot>=2.11,<6", "requests>=2.32,<3"]
+
+[project.entry-points."certbot.plugins"]
+dns-amber = "certbot_dns_amber.authenticator:Authenticator"
+
+[project.optional-dependencies]
+test = ["pytest>=8", "build>=1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

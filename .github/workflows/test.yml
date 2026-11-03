@@ -1,0 +1,32 @@
+name: certbot dns amber
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install '.[test]'
+      - run: python -m pytest -q
+      - run: python -m build
+      - name: Discover installed wheel with real Certbot
+        run: |
+          python -m venv "$RUNNER_TEMP/amber-wheel"
+          "$RUNNER_TEMP/amber-wheel/bin/pip" install dist/*.whl
+          "$RUNNER_TEMP/amber-wheel/bin/certbot" plugins --authenticators \
+            --config-dir "$RUNNER_TEMP/amber-smoke/config" \
+            --work-dir "$RUNNER_TEMP/amber-smoke/work" \
+            --logs-dir "$RUNNER_TEMP/amber-smoke/logs" > "$RUNNER_TEMP/amber-plugins.txt"
+          python -c 'import os,pathlib; text=(pathlib.Path(os.environ["RUNNER_TEMP"])/"amber-plugins.txt").read_text(); assert "* dns-amber" in text, text'
