@@ -30,3 +30,61 @@ jobs:
             --work-dir "$RUNNER_TEMP/amber-smoke/work" \
             --logs-dir "$RUNNER_TEMP/amber-smoke/logs" > "$RUNNER_TEMP/amber-plugins.txt"
           python -c 'import os,pathlib; text=(pathlib.Path(os.environ["RUNNER_TEMP"])/"amber-plugins.txt").read_text(); assert "* dns-amber" in text, text'
+
+  container:
+    needs: test
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    env:
+      IMAGE: ghcr.io/ambr-s/certbot-dns-amber
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build runtime image
+        run: docker build --pull --tag "$IMAGE:sha-$GITHUB_SHA" .
+      - name: Discover plugin in the installed runtime (no network)
+        run: python3 scripts/smoke-container.py "$IMAGE:sha-$GITHUB_SHA"
+      - name: Save tested image for publisher
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: docker save "$IMAGE:sha-$GITHUB_SHA" -o "$RUNNER_TEMP/certbot-dns-amber.tar"
+      - name: Transfer tested image
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-container
+          path: ${{ runner.temp }}/certbot-dns-amber.tar
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: container
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/ambr-s/certbot-dns-amber
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-container
+          path: ${{ runner.temp }}/tested-container
+      - name: Load the exact tested image (no rebuild)
+        run: |
+          docker load -i "$RUNNER_TEMP/tested-container/certbot-dns-amber.tar"
+          docker image inspect "$IMAGE:sha-$GITHUB_SHA"
+          docker tag "$IMAGE:sha-$GITHUB_SHA" "$IMAGE:latest"
+      - name: Authenticate to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish commit and latest tags
+        run: |
+          docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:latest"

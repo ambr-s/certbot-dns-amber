@@ -1,0 +1,13 @@
+# Deny by default: never send credentials, journals, git or build output.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!README.md
+!src/
+!src/certbot_dns_amber/
+!src/certbot_dns_amber/__init__.py
+!src/certbot_dns_amber/__main__.py
+!src/certbot_dns_amber/authenticator.py
+!src/certbot_dns_amber/client.py
+!src/certbot_dns_amber/core.py

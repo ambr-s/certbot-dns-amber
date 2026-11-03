@@ -103,6 +103,67 @@ It is a delay, **not proof of public DNS propagation**. Verify authoritative DNS
 and delegation independently when diagnosing validation failures. Console
 success describes provider command acknowledgement, not worldwide TXT visibility.
 
+## Container deployment (GHCR)
+
+After this workflow is merged and succeeds on `main`, the image is published to
+`ghcr.io/ambr-s/certbot-dns-amber:latest` and `:sha-<full-commit-sha>` (Linux amd64).
+Prefer a commit tag or digest for deliberate upgrades. Publication does not make
+this repository or its package public: authenticate Docker to GHCR with an account
+that has package read access when required. No image is published from a PR or a
+manual run on another branch.
+
+The image includes Python 3.12, Certbot and this plugin. Its entrypoint is
+`certbot`; pass Certbot arguments directly. No credentials are built into it.
+Create the host state directory on local persistent storage and prepare the
+credential file described above separately, owned by root with mode 0600 (0400
+also works). The image runs as root; for rootless Docker, use the corresponding
+mapped host owner. Never put tokens in build arguments or environment variables.
+
+```sh
+sudo install -d -m 0700 /srv/certbot-amber/letsencrypt
+# Securely provision /srv/certbot-amber/amber-credentials.json before running.
+# This issuance command performs real DNS writes:
+docker run --rm -it \
+  --mount type=bind,src=/srv/certbot-amber/letsencrypt,dst=/etc/letsencrypt \
+  --mount type=bind,src=/srv/certbot-amber/amber-credentials.json,dst=/run/amber-credentials.json,readonly \
+  ghcr.io/ambr-s/certbot-dns-amber:latest certonly \
+  --authenticator dns-amber \
+  --dns-amber-credentials /run/amber-credentials.json \
+  --dns-amber-state-dir /etc/letsencrypt/dns-amber \
+  --dns-amber-propagation-seconds 60 \
+  -d example.com -d '*.example.com'
+```
+
+The `/etc/letsencrypt` bind mount retains accounts, certificates, renewal
+configuration **and the plugin journal** across container removal. Keep this same
+mount and the same read-only credential path for every renewal/recovery command;
+never use ephemeral state or a separate journal for another job. Back it up
+securely and never run overlapping jobs. To renew, use the same `docker run`
+mounts, omit `-it`, and replace `certonly` and its options with `renew`.
+Schedule that command on the host; the image does not contain a scheduler.
+`renew --dry-run` still performs real DNS writes. Work files and logs are ephemeral
+unless you also mount `/var/lib/letsencrypt` and `/var/log/letsencrypt`.
+
+For explicit recovery, stop all scheduled jobs and use those same mounts with
+`docker run --entrypoint python ... IMAGE -m certbot_dns_amber recover
+--credentials /run/amber-credentials.json --state-dir /etc/letsencrypt/dns-amber
+--confirm-no-active-certbot`. The recovery safety rules below still apply.
+
+Local build and credential-free runtime verification:
+
+```sh
+docker build --pull -t certbot-dns-amber:local .
+python3 scripts/smoke-container.py certbot-dns-amber:local
+```
+
+CI retains the pytest, package build and installed-wheel discovery gates, then
+builds and smoke-tests the container with networking disabled. Only main pushes
+and manual main runs can hand the tested image to a separate GHCR publisher
+using `GITHUB_TOKEN`; only that job has `packages: write`. The publisher loads the
+same image, without rebuilding. The short-lived image artifact is only an internal
+transfer, not a wheel release. The Docker context is an explicit file allowlist;
+new runtime source files must be added to `.dockerignore` deliberately.
+
 ## Renewal, expiry and rotation
 
 Certbot saves the plugin options in its renewal configuration. Keep the same
